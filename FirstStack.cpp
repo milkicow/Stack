@@ -17,9 +17,15 @@ void StackResize(Stack* stk);
 
 void StackDump(Stack* stk);
 
-bool StackOk(Stack* stk);
+int StackVerify(Stack* stk);
 
 void StackFDump(Stack* stk);
+
+void ClearFile();
+
+void StackOk(Stack* stk);
+
+void DumpERrors(Stack* stk, FILE* fdump);
 
 struct Stack
 {   
@@ -28,17 +34,19 @@ struct Stack
     int size;
     int capacity;
     int canary2;
+    int error_code;
 };
 
 enum StackERrors
 {
-    STACK_PTR_NULL  = 1 << 1,
-    STACK_OVERFLOW  = 1 << 2,
-    STACK_UNDERFLOW = 1 << 3,
-    SIZE_BIGGER_CAP = 1 << 4,
-    SIZE_LESS_ZERO  = 1 << 5,
-    CAP_LESS_ZERO   = 1 << 6,
-    DATA_PTR_NULL   = 1 << 7,
+    STACK_OVERFLOW   = 1 << 1,
+    SIZE_LESS_ZERO   = 1 << 2,
+    CAP_LESS_ZERO    = 1 << 3,
+    DATA_PTR_NULL    = 1 << 4,
+    CANARY1_DIED     = 1 << 5,
+    CANARY2_DIED     = 1 << 6,
+    CANARY3_DIED     = 1 << 7,
+    CANARY4_DIED     = 1 << 8,
 };
 
 /*
@@ -56,29 +64,27 @@ int main()
 {
     Stack stk = {};
 
+    ClearFile();
+
     StackCtor(&stk, 1);
 
-    StackFDump(&stk);
-
     StackPush(&stk, 1);
-    StackFDump(&stk);
 
     StackPush(&stk, 2);
-    StackFDump(&stk);
 
     StackPush(&stk, 3);
-    StackFDump(&stk);
 
     StackPop(&stk);
-    StackFDump(&stk);
 
     StackPop(&stk);
-    StackFDump(&stk);
 
     StackPop(&stk);
-    StackFDump(&stk);
 
+    StackPop(&stk);
 
+    StackPop(&stk);
+
+    StackPop(&stk);
 
     StackDtor(&stk);
 
@@ -88,23 +94,31 @@ int main()
 void StackCtor(struct Stack* stk, int capacity)
 {
     assert(stk);
-    assert(capacity);
+
+    stk -> error_code = 0;
 
     stk -> data = (double*) calloc(capacity + 2, sizeof(*(stk -> data)));
+    if(stk -> data == NULL) stk -> error_code |= DATA_PTR_NULL;
+
     stk -> capacity = capacity;
-    stk -> size = 0; //проверить // указывает на первую пустую ячейку или на последнюю заполненную ?? if num of last - rewrite >= 1 func 
+    if(stk -> capacity <= 0) stk -> error_code |= CAP_LESS_ZERO;
+
+    stk -> size = 0; 
 
     stk -> canary1 = 0xBE31AB;
     stk -> canary2 = 0xBE31AB;
 
     *(int*)(stk -> data) = 0xBE31AB;
     *(int*)((char*)stk -> data + sizeof(*(stk -> data)) * (stk -> capacity + 1)) = 0xBE31AB;
+
+
 }
 // Разобраться полностью со структурами!!! vv
 
 void StackPush(Stack* stk, double value)
 {   
     assert(stk);
+    StackOk(stk);
 
     if ((stk -> size) >= (stk -> capacity))
     {
@@ -112,19 +126,19 @@ void StackPush(Stack* stk, double value)
     }
 
     stk -> data[++stk -> size] = value;
+    StackOk(stk);
 }
 
 void StackDtor(Stack* stk)
 {
     assert(stk);
     free(stk -> data);
-    //stk -> data = ERRPTR; - создать enum и выводить коды ошибок // прочитать про enum
 }
 
 void StackPop(Stack* stk)
 {
     assert(stk);
-    assert(stk -> size);
+    StackOk(stk);
 
     /*if(stk -> size <= 0)
     {
@@ -132,11 +146,13 @@ void StackPop(Stack* stk)
         stk -> size = ERRPTR; - создать enum и выводить коды ошибок -> нужно будет убрать assert // прочитать про enum
     }*/
     stk -> data[stk -> size--] = 0;
+    StackOk(stk);
 }
 
 void StackResize(Stack* stk)
-{
+{   
     assert(stk);
+    StackOk(stk);
 
     *(int*)((char*)stk -> data + sizeof(*(stk -> data)) * (stk -> capacity + 1)) = 0;
 
@@ -145,7 +161,7 @@ void StackResize(Stack* stk)
  
     *(int*)((char*)stk -> data + sizeof(*(stk -> data)) * (stk -> capacity + 1)) = 0xBE31AB;
 
-    assert(stk -> data);
+    StackOk(stk);
 }
 
 void StackDump(Stack* stk)
@@ -175,18 +191,17 @@ void StackDump(Stack* stk)
     printf("------------------------------------------\n");
 }
 
-bool StackOk(Stack* stk)
-{
-
-}
-
 void StackFDump(Stack* stk)
 {   
-    
     FILE* fdump = NULL;
     fdump = fopen("FDUMP.txt", "a");
 
+
     fprintf(fdump, "\n------------------------------------------\n");
+
+    DumpERrors(stk, fdump);
+
+    fprintf(fdump, "ERror_status = %d\n", stk -> error_code);
 
     fprintf(fdump, "canary1 = %X\n", stk -> canary1);
     fprintf(fdump, "canary2 = %X\n", stk -> canary2);
@@ -208,7 +223,77 @@ void StackFDump(Stack* stk)
     }
     fprintf(fdump, "canary4 = %X\n", *(int*)((char*)stk -> data + sizeof(*(stk -> data)) * (stk -> capacity + 1)));
     fprintf(fdump, "------------------------------------------\n");
+
+    fclose(fdump);
 }
+
+void ClearFile()
+{
+    FILE* fdump  = NULL;
+    fdump = fopen("FDUMP.txt", "w");
+    fclose(fdump);
+}
+
+int StackVerify(Stack* stk)
+{
+    if(stk -> canary1 != 0xBE31AB)       stk -> error_code |= CANARY1_DIED;
+    if(stk -> canary2 != 0xBE31AB)       stk -> error_code |= CANARY2_DIED;
+    if(stk -> data == NULL)              stk -> error_code |= DATA_PTR_NULL;
+    if(stk -> size < 0)                  stk -> error_code |= SIZE_LESS_ZERO;
+    if(stk -> capacity < 0)              stk -> error_code |= CAP_LESS_ZERO;
+    if(stk -> size > stk -> capacity)    stk -> error_code |= STACK_OVERFLOW;
+    if(*(int*)(stk -> data) != 0xBE31AB) stk -> error_code |= CANARY3_DIED;
+    if(*(int*)((char*)stk -> data + sizeof(*(stk -> data)) * (stk -> capacity + 1)) != 0xBE31AB) stk -> error_code |= CANARY4_DIED;
+
+    return(stk -> error_code);
+}
+
+void StackOk(Stack* stk)
+{
+    if (StackVerify(stk))
+    {
+        StackFDump(stk);
+        exit(EXIT_FAILURE);
+    }
+}
+
+void DumpERrors(Stack* stk, FILE* fdump)
+{
+    if(stk -> error_code & STACK_OVERFLOW)
+    {
+        fprintf(fdump, "STACK_OVERFLOW\n");
+    }
+    if(stk -> error_code & SIZE_LESS_ZERO)
+    {
+        fprintf(fdump, "SIZE_LESS_ZERO\n");
+    }
+    if(stk -> error_code & CAP_LESS_ZERO)
+    {
+        fprintf(fdump, "CAP_LESS_ZERO\n");
+    }
+    if(stk -> error_code & DATA_PTR_NULL)
+    {
+        fprintf(fdump, "DATA_PTR_NULL\n");
+    }
+    if(stk -> error_code & CANARY1_DIED)
+    {
+        fprintf(fdump, "CANARY1_DIED\n");
+    }
+    if(stk -> error_code & CANARY2_DIED)
+    {
+        fprintf(fdump, "CANARY2_DIED\n");
+    }
+    if(stk -> error_code & CANARY3_DIED)
+    {
+        fprintf(fdump, "CANARY3_DIED\n");
+    }
+    if(stk -> error_code & CANARY4_DIED)
+    {
+        fprintf(fdump, "CANARY4_DIED\n");
+    }
+}
+
+
 
 
 //плохо работает realloc
